@@ -726,6 +726,7 @@ class EventCreationHandler:
         ratelimit: bool = True,
         txn_id: Optional[str] = None,
         ignore_shadow_ban: bool = False,
+        ignore_spam_check: bool = False,
     ) -> Tuple[EventBase, int]:
         """
         Creates an event, then sends it.
@@ -739,9 +740,12 @@ class EventCreationHandler:
             txn_id: The transaction ID.
             ignore_shadow_ban: True if shadow-banned users should be allowed to
                 send this event.
+            ignore_spam_check: True to bypass spam-checking of the event.
 
         Raises:
             ShadowBanError if the requester has been shadow-banned.
+            SynapseError if ignore_spam_check is False and the event is considered spam, or is
+                not allowed for some other reason.
         """
         if not ignore_shadow_ban and requester.shadow_banned:
             # We randomly sleep a bit just to annoy the requester.
@@ -758,11 +762,12 @@ class EventCreationHandler:
                 requester, event_dict, token_id=requester.access_token_id, txn_id=txn_id
             )
 
-            spam_error = self.spam_checker.check_event_for_spam(event)
-            if spam_error:
-                if not isinstance(spam_error, str):
-                    spam_error = "Spam is not permitted here"
-                raise SynapseError(403, spam_error, Codes.FORBIDDEN)
+            if not ignore_spam_check:
+                spam_error = self.spam_checker.check_event_for_spam(event)
+                if spam_error:
+                    if not isinstance(spam_error, str):
+                        spam_error = "Spam is not permitted here"
+                    raise SynapseError(403, spam_error, Codes.FORBIDDEN)
 
             stream_id = await self.send_nonmember_event(
                 requester,
